@@ -3,10 +3,6 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <string.h>
 #include <limits.h>
 
 void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
@@ -15,7 +11,6 @@ void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
         printf("Failed to open directory.\n");
         return;
     }
-
     struct dirent *entry;
     struct stat fileStat;
 
