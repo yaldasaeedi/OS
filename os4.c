@@ -11,23 +11,7 @@
 #include <sys/ipc.h>
 #include <semaphore.h>
 #include <sys/wait.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-
-#define TXT_COUNT_SHM_NAME "/txt_count_shm"
-#define PNG_COUNT_SHM_NAME "/png_count_shm"
-#define JPG_COUNT_SHM_NAME "/jpg_count_shm"
-#define OTHER_COUNT_SHM_NAME "/other_count_shm"
-#define FILE_COUNT_SHM_NAME "/file_count_shm"
-typedef struct {
-    char directoryPath[100];
-    int *txtCount;
-    int *pngCount;
-    int *jpgCount;
-    int *otherCount;
-    int *fileCount;
-} ThreadArgs;
+#include <sys/shm.h>
 
 void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
     DIR *dir = opendir(directoryPath);
@@ -57,7 +41,14 @@ void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
     closedir(dir);
 }
 
-
+void* threadFunction(void* arg) {
+    // Perform operations inside the thread for each unthreaded subdirectory
+    char* subdirectoryPath = (char*)arg;
+    
+    // Add your thread-specific code here
+    
+    return NULL;
+}
 
 void findLargestAndSmallestFileSize(const char *directoryPath) {
     DIR *dir = opendir(directoryPath);
@@ -97,123 +88,70 @@ void findLargestAndSmallestFileSize(const char *directoryPath) {
     printf("Smallest file path: %s\n", smallestFilePath);
     closedir(dir);
 }
-void sharedLogic( const char directoryPath[100], int* txtCount, int* pngCount, int* jpgCount, int* otherCount, int* fileCount) {
-    struct dirent* entry;
-    struct stat fileStat;
-    DIR *dir = opendir(directoryPath);
-    printf("Directory path: %s\n", directoryPath);
-    if (dir == NULL) {
-        printf("Failed to open directory.\n");
-        return;
-    }
-    int* txtCountShm;
-int* pngCountShm;
-int* jpgCountShm;
-int* otherCountShm;
-int* fileCountShm;
 
-// Create or open the shared memory objects
-int txtCountShmFd = shm_open(TXT_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
-int pngCountShmFd = shm_open(PNG_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
-int jpgCountShmFd = shm_open(JPG_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
-int otherCountShmFd = shm_open(OTHER_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
-int fileCountShmFd = shm_open(FILE_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
-
-// Set the size of the shared memory objects
-size_t countSize = sizeof(int);
-ftruncate(txtCountShmFd, countSize);
-ftruncate(pngCountShmFd, countSize);
-ftruncate(jpgCountShmFd, countSize);
-ftruncate(otherCountShmFd, countSize);
-ftruncate(fileCountShmFd, countSize);
-
-// Map the shared memory objects into the process address space
-txtCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, txtCountShmFd, 0);
-pngCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, pngCountShmFd, 0);
-jpgCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, jpgCountShmFd, 0);
-otherCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, otherCountShmFd, 0);
-fileCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, fileCountShmFd, 0);
-
-// Update the counts using shared memory
-(*txtCountShm) = 0;
-(*pngCountShm) = 0;
-(*jpgCountShm) = 0;
-(*otherCountShm) = 0;
-(*fileCountShm) = 0;
-     while ((entry = readdir(dir)) != NULL) {
-        // Get the file path
-        char filePath[150];
-        strcpy(filePath, directoryPath);
-        strcat(filePath, "/");
-        strcat(filePath, entry->d_name);
-        
-        // Get the file type
-        if (stat(filePath, &fileStat) < 0) {
-            printf("Failed to get file information for %s\n", entry->d_name);
-            continue;
-        }
-        if (S_ISREG(fileStat.st_mode)) {
-            char* extension = strrchr(entry->d_name, '.');
-            if (strcmp(extension, ".txt") == 0) {
-    (*txtCountShm)++;
-} else if (strcmp(extension, ".png") == 0) {
-    (*pngCountShm)++;
-} else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
-    (*jpgCountShm)++;
-} else {
-    (*otherCountShm)++;
-}
-
-(*fileCountShm)++;
-        }
-    }
-   
-    printf("Directory path: %s\n", directoryPath);
-    
-    
-}
-
-void* threadFunction(void* arg) {
-    char* directoryPath = (char*)arg;
-    int txtCount, pngCount, jpgCount, otherCount, fileCount;
-
-    sharedLogic(directoryPath, &txtCount, &pngCount, &jpgCount, &otherCount, &fileCount);
-    ThreadArgs args;
-    strcpy(args.directoryPath, directoryPath);
-    (*args.txtCount) += txtCount;
-    (*args.pngCount) += pngCount;
-    (*args.jpgCount) += jpgCount;
-    (*args.otherCount) += otherCount;
-    (*args.fileCount) += fileCount;
-    return NULL;
-}
 int main() {
     char directoryPath[100];
     printf("Please enter the directory path: ");
     scanf("%s", directoryPath);
-
     DIR *dir = opendir(directoryPath);
-    DIR *dir2 = opendir(directoryPath);
     if (dir == NULL) {
         printf("Failed to open directory.\n");
         return 1;
     }
-    struct dirent* entry;
+    struct dirent *entry;
     struct stat fileStat;
-    ThreadArgs threadArgs;
-    strcpy(threadArgs.directoryPath, directoryPath);
-
-    int txtCount, pngCount, jpgCount, otherCount, fileCount;
-    sharedLogic(directoryPath, &txtCount, &pngCount, &jpgCount, &otherCount, &fileCount);
-    threadArgs.txtCount = &txtCount;
-    threadArgs.pngCount = &pngCount;
-    threadArgs.jpgCount = &jpgCount;
-    threadArgs.otherCount = &otherCount;
-    threadArgs.fileCount = &fileCount;
-
     
-
+    // Create shared memory for counts
+    int shmid_txtCount = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
+    int shmid_pngCount = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
+    int shmid_jpgCount = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
+    int shmid_otherCount = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
+    int shmid_fileCount = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
     
+    // Attach shared memory to variables
+    int* txtCount = (int*)shmat(shmid_txtCount, NULL, 0);
+    int* pngCount = (int*)shmat(shmid_pngCount, NULL, 0);
+    int* jpgCount = (int*)shmat(shmid_jpgCount, NULL, 0);
+    int* otherCount =(int)shmat(shmid_otherCount, NULL, 0);
+    int fileCount = (int)shmat(shmid_fileCount, NULL, 0);
+    
+    txtCount = 0;
+    pngCount = 0;
+    jpgCount = 0;
+    otherCount = 0;
+    fileCount = 0;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // Get the file path
+        char filePath150;
+        strcpy(filePath150, directoryPath);
+        strcat(filePath150, "/");
+        strcat(filePath150, entry->d_name);
+        
+        // Get the file type
+        if (stat(filePath150, &fileStat) < 0) {
+            printf("Failed to get file information for %s\n", entry->d_name);
+            continue;
+        }
+        if (S_ISREG(fileStat.st_mode)) {
+            char extension = strrchr(entry->d_name, '.');
+            if (extension != NULL && strlen(extension) > 1) {
+                if (strcmp(extension, ".txt") == 0) {
+                    (txtCount)++;
+                } else if (strcmp(extension, ".png") == 0) {
+                    (pngCount)++;
+                } else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
+                    (jpgCount)++;
+                } else {
+                    (otherCount)++;
+                }
+            } else {
+                (otherCount)++;
+            }
+            (fileCount)++;
+        }
+    }
+
     uintmax_t totalSize = 0;
     calculateRootFolderSize(directoryPath, &totalSize);
     findLargestAndSmallestFileSize(directoryPath);
@@ -226,10 +164,9 @@ int main() {
     sem_t semaphore;
     sem_init(&semaphore, 0, 1); // Initialize semaphore with value 1
 
-    //Create a process for each subdirectory
+    // Create a process for each subdirectory
     pid_t pid;
-    
-    while ((entry = readdir(dir2)) != NULL) {
+    while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
             char subdirectoryPath[150];
             strcpy(subdirectoryPath, directoryPath);
@@ -257,7 +194,7 @@ int main() {
                         strcat(unthreadedSubdirectoryPath, subentry->d_name);
 
                         pthread_t thread;
-                        pthread_create(&thread, NULL, threadFunction, (void*)&unthreadedSubdirectoryPath);
+                        pthread_create(&thread, NULL, threadFunction, (void*)unthreadedSubdirectoryPath);
                         pthread_join(thread, NULL); // Wait for the thread to finish
                     }
                 }
@@ -269,6 +206,7 @@ int main() {
 
     // Wait for all child processes to finish
     while (wait(NULL) > 0);
+    
     printf(".txt count: %d\n", txtCount);
     printf(".png count: %d\n", pngCount);
     printf(".jpg count: %d\n", jpgCount);
@@ -276,6 +214,19 @@ int main() {
     printf("Total number of files: %d\n", fileCount);
     calculateRootFolderSize(directoryPath, &totalSize);
     printf("Total size of the root folder: %ju bytes\n", totalSize);
+    
+    // Detach and remove shared memory
+    shmdt(txtCount);
+    shmdt(pngCount);
+    shmdt(jpgCount);
+    shmdt(otherCount);
+    shmdt(fileCount);
+    shmctl(shmid_txtCount, IPC_RMID, NULL);
+    shmctl(shmid_pngCount, IPC_RMID, NULL);
+    shmctl(shmid_jpgCount, IPC_RMID, NULL);
+    shmctl(shmid_otherCount, IPC_RMID, NULL);
+    shmctl(shmid_fileCount, IPC_RMID, NULL);
+    
     // Clean up resources
     pthread_mutex_destroy(&lock);
     sem_destroy(&semaphore);
