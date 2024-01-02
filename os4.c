@@ -11,6 +11,15 @@
 #include <sys/ipc.h>
 #include <semaphore.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#define TXT_COUNT_SHM_NAME "/txt_count_shm"
+#define PNG_COUNT_SHM_NAME "/png_count_shm"
+#define JPG_COUNT_SHM_NAME "/jpg_count_shm"
+#define OTHER_COUNT_SHM_NAME "/other_count_shm"
+#define FILE_COUNT_SHM_NAME "/file_count_shm"
 typedef struct {
     char directoryPath[100];
     int *txtCount;
@@ -88,7 +97,7 @@ void findLargestAndSmallestFileSize(const char *directoryPath) {
     printf("Smallest file path: %s\n", smallestFilePath);
     closedir(dir);
 }
-void sharedLogic( const char directoryPath[100],int *txtCount,int *pngCount,int *jpgCount,int *otherCount,int *fileCount) {
+void sharedLogic( const char directoryPath[100], int* txtCount, int* pngCount, int* jpgCount, int* otherCount, int* fileCount) {
     struct dirent* entry;
     struct stat fileStat;
     DIR *dir = opendir(directoryPath);
@@ -97,7 +106,40 @@ void sharedLogic( const char directoryPath[100],int *txtCount,int *pngCount,int 
         printf("Failed to open directory.\n");
         return;
     }
+    int* txtCountShm;
+int* pngCountShm;
+int* jpgCountShm;
+int* otherCountShm;
+int* fileCountShm;
 
+// Create or open the shared memory objects
+int txtCountShmFd = shm_open(TXT_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
+int pngCountShmFd = shm_open(PNG_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
+int jpgCountShmFd = shm_open(JPG_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
+int otherCountShmFd = shm_open(OTHER_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
+int fileCountShmFd = shm_open(FILE_COUNT_SHM_NAME, O_CREAT | O_RDWR, 0666);
+
+// Set the size of the shared memory objects
+size_t countSize = sizeof(int);
+ftruncate(txtCountShmFd, countSize);
+ftruncate(pngCountShmFd, countSize);
+ftruncate(jpgCountShmFd, countSize);
+ftruncate(otherCountShmFd, countSize);
+ftruncate(fileCountShmFd, countSize);
+
+// Map the shared memory objects into the process address space
+txtCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, txtCountShmFd, 0);
+pngCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, pngCountShmFd, 0);
+jpgCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, jpgCountShmFd, 0);
+otherCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, otherCountShmFd, 0);
+fileCountShm = (int*)mmap(0, countSize, PROT_READ | PROT_WRITE, MAP_SHARED, fileCountShmFd, 0);
+
+// Update the counts using shared memory
+(*txtCountShm) = 0;
+(*pngCountShm) = 0;
+(*jpgCountShm) = 0;
+(*otherCountShm) = 0;
+(*fileCountShm) = 0;
      while ((entry = readdir(dir)) != NULL) {
         // Get the file path
         char filePath[150];
@@ -112,18 +154,17 @@ void sharedLogic( const char directoryPath[100],int *txtCount,int *pngCount,int 
         }
         if (S_ISREG(fileStat.st_mode)) {
             char* extension = strrchr(entry->d_name, '.');
-            if (extension != NULL && strlen(extension) > 1) {
-                if (strcmp(extension, ".txt") == 0) {
-                    (*txtCount)++;
-                } else if (strcmp(extension, ".png") == 0) {
-                    (*pngCount)++;
-                } else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
-                    (*jpgCount)++;
-                } else {
-                    (*otherCount)++;
-                }
-            }
-            (*fileCount)++;
+            if (strcmp(extension, ".txt") == 0) {
+    (*txtCountShm)++;
+} else if (strcmp(extension, ".png") == 0) {
+    (*pngCountShm)++;
+} else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
+    (*jpgCountShm)++;
+} else {
+    (*otherCountShm)++;
+}
+
+(*fileCountShm)++;
         }
     }
    
@@ -133,10 +174,17 @@ void sharedLogic( const char directoryPath[100],int *txtCount,int *pngCount,int 
 }
 
 void* threadFunction(void* arg) {
-    // Perform operations inside the thread for each unthreaded subdirectory
-    ThreadArgs *args = (ThreadArgs*)arg;
-    // Add your thread-specific code here
-    sharedLogic(args->directoryPath, (args->txtCount), (args->pngCount), (args->jpgCount), (args->otherCount), (args->fileCount));
+    char* directoryPath = (char*)arg;
+    int txtCount, pngCount, jpgCount, otherCount, fileCount;
+
+    sharedLogic(directoryPath, &txtCount, &pngCount, &jpgCount, &otherCount, &fileCount);
+    ThreadArgs args;
+    strcpy(args.directoryPath, directoryPath);
+    (*args.txtCount) += txtCount;
+    (*args.pngCount) += pngCount;
+    (*args.jpgCount) += jpgCount;
+    (*args.otherCount) += otherCount;
+    (*args.fileCount) += fileCount;
     return NULL;
 }
 int main() {
@@ -152,20 +200,20 @@ int main() {
     }
     struct dirent* entry;
     struct stat fileStat;
+    ThreadArgs threadArgs;
+    strcpy(threadArgs.directoryPath, directoryPath);
 
-    int txtCount = 0, pngCount = 0, jpgCount = 0, otherCount = 0, fileCount = 0;
+    int txtCount, pngCount, jpgCount, otherCount, fileCount;
+    sharedLogic(directoryPath, &txtCount, &pngCount, &jpgCount, &otherCount, &fileCount);
+    threadArgs.txtCount = &txtCount;
+    threadArgs.pngCount = &pngCount;
+    threadArgs.jpgCount = &jpgCount;
+    threadArgs.otherCount = &otherCount;
+    threadArgs.fileCount = &fileCount;
 
     
 
-    sharedLogic(directoryPath,&txtCount,&pngCount,&jpgCount,&otherCount,&fileCount);
-    ThreadArgs args;
-    strcpy(args.directoryPath, directoryPath);
-    args.txtCount = &txtCount;
-    args.pngCount = &pngCount;
-    args.jpgCount = &jpgCount;
-    args.otherCount = &otherCount;
-    args.fileCount = &fileCount;
-   
+    
     uintmax_t totalSize = 0;
     calculateRootFolderSize(directoryPath, &totalSize);
     findLargestAndSmallestFileSize(directoryPath);
