@@ -1,0 +1,13 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/yalda/Desktop/uuu/OS/OS/os4'
+relocations:
+  - { offsetInCU: 0xA1, offset: 0xA1, size: 0x8, addend: 0x0, symName: _calculateRootFolderSize, symObjAddr: 0x0, symBinAddr: 0x10000342C, symSize: 0x158 }
+  - { offsetInCU: 0x561, offset: 0x561, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x314, symBinAddr: 0x100003740, symSize: 0x4A8 }
+  - { offsetInCU: 0x742, offset: 0x742, size: 0x8, addend: 0x0, symName: _findLargestAndSmallestFileSize, symObjAddr: 0x184, symBinAddr: 0x1000035B0, symSize: 0x190 }
+  - { offsetInCU: 0x74A, offset: 0x74A, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x314, symBinAddr: 0x100003740, symSize: 0x4A8 }
+  - { offsetInCU: 0x7F3, offset: 0x7F3, size: 0x8, addend: 0x0, symName: _threadFunction, symObjAddr: 0x158, symBinAddr: 0x100003584, symSize: 0x2C }
+  - { offsetInCU: 0x7FB, offset: 0x7FB, size: 0x8, addend: 0x0, symName: _findLargestAndSmallestFileSize, symObjAddr: 0x184, symBinAddr: 0x1000035B0, symSize: 0x190 }
+  - { offsetInCU: 0x839, offset: 0x839, size: 0x8, addend: 0x0, symName: _calculateRootFolderSize, symObjAddr: 0x0, symBinAddr: 0x10000342C, symSize: 0x158 }
+  - { offsetInCU: 0x841, offset: 0x841, size: 0x8, addend: 0x0, symName: _threadFunction, symObjAddr: 0x158, symBinAddr: 0x100003584, symSize: 0x2C }
+...
