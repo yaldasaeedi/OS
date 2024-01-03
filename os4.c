@@ -159,41 +159,7 @@ int main() {
     char directoryPath[100];
     printf("Enter the directory path: ");
     scanf("%s", directoryPath);
-
-    // Create a thread for each subdirectory
-    DIR *dir = opendir(directoryPath);
-    if (dir == NULL) {
-        printf("Failed to open directory.\n");
-        return 0;
-    }
-    struct dirent *entry;
-    pthread_t threads[100];
-    int threadCount = 0;
-    while ((entry = readdir(dir)) != NULL) {
-        char filePath[150];
-        strcpy(filePath, directoryPath);
-        strcat(filePath, "/");
-        strcat(filePath, entry->d_name);
-
-        struct stat fileStat;
-        if (stat(filePath, &fileStat) < 0) {
-            printf("Failed to get file information for %s\n", entry->d_name);
-            continue;
-        }
-
-        if (S_ISDIR(fileStat.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            ThreadArgs *args = malloc(sizeof(ThreadArgs));
-            strcpy(args->directoryPath, filePath);
-            pthread_create(&threads[threadCount], NULL, calculateFileTypes, (void *)args);
-            threadCount++;
-        }
-    }
-    closedir(dir);
-
-    // Wait for all threads to finish
-    for (int i = 0; i < threadCount; i++) {
-        pthread_join(threads[i], NULL);
-    }
+    sharedLogic(directoryPath);
 
     // Calculate the total file count and print the results
     calculateRootFolderSize(directoryPath, &totalfileCount);
