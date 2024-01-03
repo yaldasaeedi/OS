@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -11,13 +10,17 @@
 #include <sys/ipc.h>
 #include <semaphore.h>
 #include <sys/wait.h>
+#include <stdlib.h>
+
+int totaltxtCount;
+int totalpngCount;
+int totaljpgCount;
+int totalotherCount;
+int totalfileCount;
+pthread_mutex_t lock;
+
 typedef struct {
     char directoryPath[100];
-    int *txtCount;
-    int *pngCount;
-    int *jpgCount;
-    int *otherCount;
-    int *fileCount;
 } ThreadArgs;
 
 void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
@@ -47,8 +50,6 @@ void calculateRootFolderSize(const char *directoryPath, uintmax_t *totalSize) {
     }
     closedir(dir);
 }
-
-
 
 void findLargestAndSmallestFileSize(const char *directoryPath) {
     DIR *dir = opendir(directoryPath);
@@ -88,150 +89,121 @@ void findLargestAndSmallestFileSize(const char *directoryPath) {
     printf("Smallest file path: %s\n", smallestFilePath);
     closedir(dir);
 }
-void sharedLogic( const char directoryPath[100],int *txtCount,int *pngCount,int *jpgCount,int *otherCount,int *fileCount) {
-    struct dirent* entry;
+
+void sharedLogic(const char directoryPath[100]) {
+    struct dirent *entry;
     struct stat fileStat;
     DIR *dir = opendir(directoryPath);
-    printf("Directory path: %s\n", directoryPath);
     if (dir == NULL) {
         printf("Failed to open directory.\n");
         return;
     }
 
-     while ((entry = readdir(dir)) != NULL) {
+    while ((entry = readdir(dir)) != NULL) {
         // Get the file path
         char filePath[150];
         strcpy(filePath, directoryPath);
         strcat(filePath, "/");
         strcat(filePath, entry->d_name);
-        
+
         // Get the file type
         if (stat(filePath, &fileStat) < 0) {
             printf("Failed to get file information for %s\n", entry->d_name);
             continue;
         }
         if (S_ISREG(fileStat.st_mode)) {
-            char* extension = strrchr(entry->d_name, '.');
+            char *extension = strrchr(entry->d_name, '.');
             if (extension != NULL && strlen(extension) > 1) {
                 if (strcmp(extension, ".txt") == 0) {
-                    (*txtCount)++;
+                    pthread_mutex_lock(&lock);
+                    totaltxtCount++;
+                    pthread_mutex_unlock(&lock);
                 } else if (strcmp(extension, ".png") == 0) {
-                    (*pngCount)++;
+                    pthread_mutex_lock(&lock);
+                    totalpngCount++;
+                    pthread_mutex_unlock(&lock);
                 } else if (strcmp(extension, ".jpg") == 0 || strcmp(extension, ".jpeg") == 0) {
-                    (*jpgCount)++;
+                    pthread_mutex_lock(&lock);
+                    totaljpgCount++;
+                    pthread_mutex_unlock(&lock);
                 } else {
-                    (*otherCount)++;
+                    pthread_mutex_lock(&lock);
+                    totalotherCount++;
+                    pthread_mutex_unlock(&lock);
                 }
+            } else {
+                pthread_mutex_lock(&lock);
+               totalotherCount++;
+                pthread_mutex_unlock(&lock);
             }
-            (*fileCount)++;
+        } else if (S_ISDIR(fileStat.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            sharedLogic(filePath);
         }
     }
-   
-    printf("Directory path: %s\n", directoryPath);
-    
-    
+    closedir(dir);
 }
 
-void* threadFunction(void* arg) {
-    // Perform operations inside the thread for each unthreaded subdirectory
-    ThreadArgs *args = (ThreadArgs*)arg;
-    // Add your thread-specific code here
-    sharedLogic(args->directoryPath, (args->txtCount), (args->pngCount), (args->jpgCount), (args->otherCount), (args->fileCount));
-    return NULL;
+void *calculateFileTypes(void *args) {
+    ThreadArgs *threadArgs = (ThreadArgs *)args;
+    sharedLogic(threadArgs->directoryPath);
+    pthread_exit(NULL);
 }
+
 int main() {
+    totaltxtCount = 0;
+    totalpngCount = 0;
+    totaljpgCount = 0;
+    totalotherCount = 0;
+    totalfileCount = 0;
+
     char directoryPath[100];
-    printf("Please enter the directory path: ");
+    printf("Enter the directory path: ");
     scanf("%s", directoryPath);
 
+    // Create a thread for each subdirectory
     DIR *dir = opendir(directoryPath);
-    DIR *dir2 = opendir(directoryPath);
     if (dir == NULL) {
         printf("Failed to open directory.\n");
-        return 1;
+        return 0;
     }
-    struct dirent* entry;
-    struct stat fileStat;
+    struct dirent *entry;
+    pthread_t threads[100];
+    int threadCount = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        char filePath[150];
+        strcpy(filePath, directoryPath);
+        strcat(filePath, "/");
+        strcat(filePath, entry->d_name);
 
-    int txtCount = 0, pngCount = 0, jpgCount = 0, otherCount = 0, fileCount = 0;
+        struct stat fileStat;
+        if (stat(filePath, &fileStat) < 0) {
+            printf("Failed to get file information for %s\n", entry->d_name);
+            continue;
+        }
 
-    
-
-    sharedLogic(directoryPath,&txtCount,&pngCount,&jpgCount,&otherCount,&fileCount);
-    ThreadArgs args;
-    strcpy(args.directoryPath, directoryPath);
-    args.txtCount = &txtCount;
-    args.pngCount = &pngCount;
-    args.jpgCount = &jpgCount;
-    args.otherCount = &otherCount;
-    args.fileCount = &fileCount;
-   
-    uintmax_t totalSize = 0;
-    calculateRootFolderSize(directoryPath, &totalSize);
-    findLargestAndSmallestFileSize(directoryPath);
-
-    // Create a lock for synchronization
-    pthread_mutex_t lock;
-    pthread_mutex_init(&lock, NULL);
-
-    // Create a semaphore for synchronization
-    sem_t semaphore;
-    sem_init(&semaphore, 0, 1); // Initialize semaphore with value 1
-
-    //Create a process for each subdirectory
-    pid_t pid;
-    
-    while ((entry = readdir(dir2)) != NULL) {
-        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            char subdirectoryPath[150];
-            strcpy(subdirectoryPath, directoryPath);
-            strcat(subdirectoryPath, "/");
-            strcat(subdirectoryPath, entry->d_name);
-
-            pid = fork();
-            if (pid < 0) {
-                printf("Failed to create child process for %s\n", entry->d_name);
-                continue;
-            } else if (pid == 0) {
-                // Child process
-                DIR *subdir = opendir(subdirectoryPath);
-                if (subdir == NULL) {
-                    printf("Failed to open subdirectory %s\n", entry->d_name);
-                    return 1;
-                }
-                struct dirent *subentry;
-                while ((subentry = readdir(subdir)) != NULL) {
-                    if (subentry->d_type == DT_DIR) {
-                        // Create a thread for each unthreaded subdirectory
-                        char unthreadedSubdirectoryPath[150];
-                        strcpy(unthreadedSubdirectoryPath, subdirectoryPath);
-                        strcat(unthreadedSubdirectoryPath, "/");
-                        strcat(unthreadedSubdirectoryPath, subentry->d_name);
-
-                        pthread_t thread;
-                        pthread_create(&thread, NULL, threadFunction, (void*)&unthreadedSubdirectoryPath);
-                        pthread_join(thread, NULL); // Wait for the thread to finish
-                    }
-                }
-                closedir(subdir);
-                return 0;
-            }
+        if (S_ISDIR(fileStat.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            ThreadArgs *args = malloc(sizeof(ThreadArgs));
+            strcpy(args->directoryPath, filePath);
+            pthread_create(&threads[threadCount], NULL, calculateFileTypes, (void *)args);
+            threadCount++;
         }
     }
-
-    // Wait for all child processes to finish
-    while (wait(NULL) > 0);
-    printf(".txt count: %d\n", txtCount);
-    printf(".png count: %d\n", pngCount);
-    printf(".jpg count: %d\n", jpgCount);
-    printf("Other file types count: %d\n", otherCount);
-    printf("Total number of files: %d\n", fileCount);
-    calculateRootFolderSize(directoryPath, &totalSize);
-    printf("Total size of the root folder: %ju bytes\n", totalSize);
-    // Clean up resources
-    pthread_mutex_destroy(&lock);
-    sem_destroy(&semaphore);
     closedir(dir);
+
+    // Wait for all threads to finish
+    for (int i = 0; i < threadCount; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Calculate the total file count and print the results
+    calculateRootFolderSize(directoryPath, &totalfileCount);
+    printf("Total .txt files: %d\n", totaltxtCount);
+    printf("Total .png files: %d\n", totalpngCount);
+    printf("Total .jpg files: %d\n", totaljpgCount);
+    printf("Total other files: %d\n", totalotherCount);
+    printf("Total files: %d\n", totalfileCount);
+
+    findLargestAndSmallestFileSize(directoryPath);
 
     return 0;
 }
